@@ -80,7 +80,7 @@ function getScoreBadgeColor(score: number): string {
 }
 
 export async function sendOutlookNotification(params: OutlookNotificationParams): Promise<void> {
-  const senderEmail = process.env.GRAPH_SENDER_EMAIL
+  const senderEmail = process.env.GRAPH_SENDER_EMAIL?.trim()
   if (!senderEmail) {
     console.warn('[Outlook] GRAPH_SENDER_EMAIL not set — skipping notification')
     return

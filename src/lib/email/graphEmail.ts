@@ -54,7 +54,7 @@ export async function sendGraphEmail(params: {
   subject: string
   body: string
 }): Promise<void> {
-  const senderEmail = process.env.GRAPH_SENDER_EMAIL
+  const senderEmail = process.env.GRAPH_SENDER_EMAIL?.trim()
   if (!senderEmail) {
     console.error('[Graph] GRAPH_SENDER_EMAIL is not set in .env.local')
     throw new Error('GRAPH_SENDER_EMAIL not configured')
@@ -116,7 +116,7 @@ export interface GraphMessage {
  * Requests the body as plain text via the Prefer header.
  */
 export async function fetchGraphMessage(messageId: string): Promise<GraphMessage | null> {
-  const mailbox = process.env.GRAPH_SENDER_EMAIL
+  const mailbox = process.env.GRAPH_SENDER_EMAIL?.trim()
   if (!mailbox) throw new Error('GRAPH_SENDER_EMAIL not configured')
 
   const token = await getGraphToken()

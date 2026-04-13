@@ -215,13 +215,13 @@ async function runScreeningPipeline(params: {
 
     // HR_INBOX_EMAIL = where HR notification emails are sent (e.g. hr@exxircapital.com)
     // GRAPH_SENDER_EMAIL = the M365 user account that sends all emails (e.g. nschaumberg@exxircapital.com)
-    const hrEmail = process.env.HR_INBOX_EMAIL
+    const hrEmail = process.env.HR_INBOX_EMAIL?.trim()
     const hmEmail = job.hiring_manager?.email
     const hmName = job.hiring_manager?.full_name ?? 'Hiring Manager'
 
     console.log('[Screening] Sending notifications —', {
       hrInbox: hrEmail ?? '(HR_INBOX_EMAIL not set)',
-      graphSender: process.env.GRAPH_SENDER_EMAIL ?? '(GRAPH_SENDER_EMAIL not set)',
+      graphSender: process.env.GRAPH_SENDER_EMAIL?.trim() ?? '(GRAPH_SENDER_EMAIL not set)',
       hiringManager: hmEmail ?? '(no hiring manager)',
       applicantName,
       jobTitle: job.title,

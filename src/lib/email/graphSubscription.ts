@@ -24,7 +24,7 @@ function notificationUrl(): string {
 }
 
 function inboxResource(): string {
-  const mailbox = process.env.GRAPH_SENDER_EMAIL
+  const mailbox = process.env.GRAPH_SENDER_EMAIL?.trim()
   if (!mailbox) throw new Error('GRAPH_SENDER_EMAIL is not set')
   return `users/${mailbox}/mailFolders/inbox/messages`
 }

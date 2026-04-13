@@ -176,7 +176,7 @@ async function postChatMessage(token: string, chatId: string, html: string): Pro
 }
 
 export async function sendTeamsDm(params: TeamsDmParams): Promise<void> {
-  const senderEmail = process.env.GRAPH_SENDER_EMAIL
+  const senderEmail = process.env.GRAPH_SENDER_EMAIL?.trim()
   const tenantId = process.env.AZURE_TENANT_ID
   const clientId = process.env.AZURE_CLIENT_ID
   const clientSecret = process.env.AZURE_CLIENT_SECRET
