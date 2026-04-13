@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(sudo chown:*)",
+      "Bash(npm run:*)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(npm --prefix /Users/nikaschaumberg/recruiting-platform run dev)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(vercel --version)",
+      "Bash(vercel integration:*)",
+      "Bash(vercel:*)"
+    ]
+  }
+}
