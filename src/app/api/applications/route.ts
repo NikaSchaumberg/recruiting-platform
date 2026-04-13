@@ -1,6 +1,6 @@
 export const runtime = 'nodejs'
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractTextFromPDF } from '@/lib/pdf/extractor'
 import { screenCandidate } from '@/lib/claude/screener'
@@ -123,15 +123,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Failed to save application: ${detail}` }, { status: 500 })
     }
 
-    // Run AI screening asynchronously (don't block the response)
-    runScreeningPipeline({
-      applicationId,
-      applicantName,
-      applicantEmail,
-      cvBuffer,
-      job,
-      coverLetter,
-    }).catch((err) => console.error('[Screening] Pipeline error:', err))
+    // Run AI screening after the response is sent.
+    // `after()` keeps the Vercel function alive until the work completes,
+    // so the pipeline and email notifications are never killed mid-flight.
+    console.log('[Applications] Application created, scheduling screening pipeline for', applicationId)
+    after(
+      runScreeningPipeline({
+        applicationId,
+        applicantName,
+        applicantEmail,
+        cvBuffer,
+        job,
+        coverLetter,
+      }).catch((err) => console.error('[Screening] Pipeline error:', err))
+    )
 
     return NextResponse.json(
       { success: true, applicationId },
@@ -207,37 +212,72 @@ async function runScreeningPipeline(params: {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
     const dashboardUrl = `${baseUrl}/dashboard/candidates/${applicationId}`
 
-    // Send notifications (fire-and-forget, errors logged but not thrown)
-    await Promise.allSettled([
-      sendTeamsNotification({
-        applicantName,
-        applicantEmail,
-        jobTitle: job.title,
-        jobDepartment: job.department,
-        score: screening.score,
-        recommendation: screening.recommendation,
-        summary: screening.summary,
-        strengths: screening.strengths,
-        gaps: screening.gaps,
-        dashboardUrl,
-      }),
-      job.hiring_manager
-        ? sendOutlookNotification({
-            recipientEmail: job.hiring_manager.email,
-            recipientName: job.hiring_manager.full_name,
-            applicantName,
-            applicantEmail,
-            jobTitle: job.title,
-            jobDepartment: job.department,
-            score: screening.score,
-            recommendation: screening.recommendation,
-            summary: screening.summary,
-            strengths: screening.strengths,
-            gaps: screening.gaps,
-            dashboardUrl,
-          })
-        : Promise.resolve(),
-    ])
+    // Determine recipients: always notify GRAPH_SENDER_EMAIL (hr inbox),
+    // plus the hiring manager if assigned and different from the hr inbox.
+    const hrEmail = process.env.GRAPH_SENDER_EMAIL
+    const hmEmail = job.hiring_manager?.email
+    const hmName = job.hiring_manager?.full_name ?? 'Hiring Manager'
+
+    console.log('[Screening] Sending notifications —', {
+      hrEmail: hrEmail ?? '(not set)',
+      hiringManager: hmEmail ?? '(no hiring manager)',
+      applicantName,
+      jobTitle: job.title,
+      score: screening.score,
+      recommendation: screening.recommendation,
+    })
+
+    const notificationParams = {
+      applicantName,
+      applicantEmail,
+      jobTitle: job.title,
+      jobDepartment: job.department,
+      score: screening.score,
+      recommendation: screening.recommendation,
+      summary: screening.summary,
+      strengths: screening.strengths,
+      gaps: screening.gaps,
+      dashboardUrl,
+    }
+
+    const emailTasks: Promise<void>[] = [
+      sendTeamsNotification(notificationParams),
+    ]
+
+    // Always send to HR inbox if configured
+    if (hrEmail) {
+      console.log('[Screening] Queuing email to HR inbox:', hrEmail)
+      emailTasks.push(
+        sendOutlookNotification({
+          ...notificationParams,
+          recipientEmail: hrEmail,
+          recipientName: 'HR Team',
+        })
+      )
+    } else {
+      console.warn('[Screening] GRAPH_SENDER_EMAIL not set — skipping HR inbox notification')
+    }
+
+    // Also send to hiring manager if assigned and not the same address as HR inbox
+    if (hmEmail && hmEmail.toLowerCase() !== hrEmail?.toLowerCase()) {
+      console.log('[Screening] Queuing email to hiring manager:', hmEmail)
+      emailTasks.push(
+        sendOutlookNotification({
+          ...notificationParams,
+          recipientEmail: hmEmail,
+          recipientName: hmName,
+        })
+      )
+    }
+
+    const results = await Promise.allSettled(emailTasks)
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error(`[Screening] Notification task ${i} failed:`, r.reason)
+      } else {
+        console.log(`[Screening] Notification task ${i} succeeded`)
+      }
+    })
   } catch (err) {
     console.error('[Screening] Pipeline failed for application', applicationId, err)
     // Mark as pending so it doesn't stay in screening limbo

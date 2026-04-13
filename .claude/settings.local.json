@@ -10,7 +10,8 @@
       "Bash(npx tsc:*)",
       "Bash(vercel --version)",
       "Bash(vercel integration:*)",
-      "Bash(vercel:*)"
+      "Bash(vercel:*)",
+      "Bash(git -C /Users/nikaschaumberg/recruiting-platform status --porcelain)"
     ]
   }
 }
