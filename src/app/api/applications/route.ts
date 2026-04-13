@@ -6,6 +6,7 @@ import { extractTextFromPDF } from '@/lib/pdf/extractor'
 import { screenCandidate } from '@/lib/claude/screener'
 import { sendTeamsNotification } from '@/lib/notifications/teams'
 import { sendOutlookNotification } from '@/lib/notifications/outlook'
+import { sendTeamsDm } from '@/lib/notifications/teamsDm'
 import { randomUUID } from 'crypto'
 
 const MAX_CV_SIZE = 8 * 1024 * 1024 // 8MB
@@ -240,42 +241,71 @@ async function runScreeningPipeline(params: {
       dashboardUrl,
     }
 
-    const emailTasks: Promise<void>[] = [
-      sendTeamsNotification(notificationParams),
-    ]
+    // ─── Notifications ────────────────────────────────────────────────────────
+    // All 4 fire in parallel. Failures are logged individually but never block
+    // each other — Promise.allSettled ensures every task runs to completion.
 
-    // Always send to HR inbox if configured
+    const notifications: { label: string; task: Promise<void> }[] = []
+
+    // 1. HR channel (Teams webhook)
+    notifications.push({
+      label: 'HR Teams channel webhook',
+      task: sendTeamsNotification(notificationParams),
+    })
+
+    // 2. HR inbox email
     if (hrEmail) {
-      console.log('[Screening] Queuing email to HR inbox:', hrEmail)
-      emailTasks.push(
-        sendOutlookNotification({
+      notifications.push({
+        label: `HR inbox email → ${hrEmail}`,
+        task: sendOutlookNotification({
           ...notificationParams,
           recipientEmail: hrEmail,
           recipientName: 'HR Team',
-        })
-      )
+        }),
+      })
     } else {
-      console.warn('[Screening] GRAPH_SENDER_EMAIL not set — skipping HR inbox notification')
+      console.warn('[Screening] GRAPH_SENDER_EMAIL not set — skipping HR inbox email')
     }
 
-    // Also send to hiring manager if assigned and not the same address as HR inbox
-    if (hmEmail && hmEmail.toLowerCase() !== hrEmail?.toLowerCase()) {
-      console.log('[Screening] Queuing email to hiring manager:', hmEmail)
-      emailTasks.push(
-        sendOutlookNotification({
+    // 3 & 4. Hiring manager notifications (only if assigned)
+    if (hmEmail) {
+      // 3. Private Teams DM to hiring manager
+      notifications.push({
+        label: `Hiring manager Teams DM → ${hmEmail}`,
+        task: sendTeamsDm({
+          recipientEmail: hmEmail,
+          recipientName: hmName,
+          applicantName,
+          applicantEmail,
+          jobTitle: job.title,
+          score: screening.score,
+          recommendation: screening.recommendation,
+          strengths: screening.strengths,
+          dashboardUrl,
+        }),
+      })
+
+      // 4. Hiring manager email (always, independent of Teams DM)
+      notifications.push({
+        label: `Hiring manager email → ${hmEmail}`,
+        task: sendOutlookNotification({
           ...notificationParams,
           recipientEmail: hmEmail,
           recipientName: hmName,
-        })
-      )
+        }),
+      })
+    } else {
+      console.log('[Screening] No hiring manager assigned — skipping steps 3 & 4')
     }
 
-    const results = await Promise.allSettled(emailTasks)
+    console.log(`[Screening] Firing ${notifications.length} notification(s) in parallel`)
+    const results = await Promise.allSettled(notifications.map((n) => n.task))
     results.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        console.error(`[Screening] Notification task ${i} failed:`, r.reason)
+      const label = notifications[i].label
+      if (r.status === 'fulfilled') {
+        console.log(`[Screening] ✓ ${label}`)
       } else {
-        console.log(`[Screening] Notification task ${i} succeeded`)
+        console.error(`[Screening] ✗ ${label}:`, r.reason instanceof Error ? r.reason.message : r.reason)
       }
     })
   } catch (err) {
