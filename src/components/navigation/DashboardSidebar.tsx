@@ -46,6 +46,15 @@ export function DashboardSidebar({ profile }: SidebarProps) {
             ),
           },
           {
+            href: '/dashboard/email-templates',
+            label: 'Email Templates',
+            icon: (
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            ),
+          },
+          {
             href: '/dashboard/team',
             label: 'Team',
             icon: (

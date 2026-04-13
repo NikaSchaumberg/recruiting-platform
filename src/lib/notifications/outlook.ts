@@ -1,3 +1,5 @@
+import { cleanEnv } from '@/lib/email/graphEmail'
+
 interface TokenCache {
   token: string
   expiresAt: number
@@ -80,7 +82,7 @@ function getScoreBadgeColor(score: number): string {
 }
 
 export async function sendOutlookNotification(params: OutlookNotificationParams): Promise<void> {
-  const senderEmail = process.env.GRAPH_SENDER_EMAIL?.trim()
+  const senderEmail = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!senderEmail) {
     console.warn('[Outlook] GRAPH_SENDER_EMAIL not set — skipping notification')
     return

@@ -8,7 +8,9 @@ import type { ApplicationStatus } from '@/types/database'
 
 const VALID_STATUSES: ApplicationStatus[] = [
   'pending', 'screening', 'screened', 'shortlisted',
-  'interview_invited', 'interview', 'offer', 'rejected', 'hired',
+  'interview_invited', 'interview',
+  'first_interview', 'second_interview',
+  'offer', 'rejected', 'hired',
 ]
 
 const STATUS_LABELS: Record<string, string> = {
@@ -17,8 +19,10 @@ const STATUS_LABELS: Record<string, string> = {
   screened: 'Screened',
   shortlisted: 'Shortlisted',
   interview_invited: 'Interview Invited',
-  interview: 'Interview Scheduled',
-  offer: 'Offer Extended',
+  interview: 'Interview',
+  first_interview: '1st Interview',
+  second_interview: '2nd Interview',
+  offer: 'Offer',
   rejected: 'Rejected',
   hired: 'Hired',
 }

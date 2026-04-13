@@ -1,4 +1,4 @@
-import { getGraphToken } from './graphEmail'
+import { getGraphToken, cleanEnv } from './graphEmail'
 
 // Graph mail subscriptions max out at 4,230 minutes (~3 days).
 // We target 3 days minus 5 minutes for the expiry we request.
@@ -24,7 +24,7 @@ function notificationUrl(): string {
 }
 
 function inboxResource(): string {
-  const mailbox = process.env.GRAPH_SENDER_EMAIL?.trim()
+  const mailbox = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!mailbox) throw new Error('GRAPH_SENDER_EMAIL is not set')
   return `users/${mailbox}/mailFolders/inbox/messages`
 }

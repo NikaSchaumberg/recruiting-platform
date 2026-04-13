@@ -1,5 +1,14 @@
 let tokenCache: { token: string; expiresAt: number } | null = null
 
+/**
+ * Sanitize an email address environment variable.
+ * Strips both real newlines (0x0A) and literal backslash-n sequences that can
+ * be stored when a value is piped via `echo` into `vercel env add`.
+ */
+export function cleanEnv(val: string | undefined): string | undefined {
+  return val?.replace(/\\n/g, '').trim()
+}
+
 export async function getGraphToken(): Promise<string> {
   const now = Date.now()
   if (tokenCache && tokenCache.expiresAt > now + 60_000) return tokenCache.token
@@ -54,7 +63,7 @@ export async function sendGraphEmail(params: {
   subject: string
   body: string
 }): Promise<void> {
-  const senderEmail = process.env.GRAPH_SENDER_EMAIL?.trim()
+  const senderEmail = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!senderEmail) {
     console.error('[Graph] GRAPH_SENDER_EMAIL is not set in .env.local')
     throw new Error('GRAPH_SENDER_EMAIL not configured')
@@ -103,6 +112,74 @@ export async function sendGraphEmail(params: {
   console.log(`[Graph] Email sent successfully to ${params.to}`)
 }
 
+/**
+ * Send an email with a file attachment via Microsoft Graph API.
+ */
+export async function sendGraphEmailWithAttachment(params: {
+  to: string
+  toName: string
+  subject: string
+  body: string
+  attachment: {
+    filename: string
+    contentType: string
+    base64: string
+  }
+}): Promise<void> {
+  const senderEmail = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
+  if (!senderEmail) throw new Error('GRAPH_SENDER_EMAIL not configured')
+
+  console.log(`[Graph] Sending email with attachment — from: ${senderEmail}, to: ${params.to}, subject: "${params.subject}"`)
+
+  const token = await getGraphToken()
+
+  const payload = {
+    message: {
+      subject: params.subject,
+      body: { contentType: 'Text', content: params.body },
+      toRecipients: [
+        { emailAddress: { address: params.to, name: params.toName } },
+      ],
+      attachments: [
+        {
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: params.attachment.filename,
+          contentType: params.attachment.contentType,
+          contentBytes: params.attachment.base64,
+        },
+      ],
+    },
+    saveToSentItems: true,
+  }
+
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(senderEmail)}/sendMail`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }
+  )
+
+  if (!res.ok) {
+    let errorDetail = `HTTP ${res.status}`
+    try {
+      const errBody = await res.json()
+      const inner = errBody?.error
+      errorDetail = `HTTP ${res.status} — code: ${inner?.code ?? '?'}, message: ${inner?.message ?? JSON.stringify(errBody)}`
+    } catch {
+      errorDetail = `HTTP ${res.status} — ${await res.text().catch(() => '(no body)')}`
+    }
+    console.error(`[Graph] sendMailWithAttachment FAILED: ${errorDetail}`)
+    throw new Error(`sendMail failed: ${errorDetail}`)
+  }
+
+  console.log(`[Graph] Email with attachment sent successfully to ${params.to}`)
+}
+
 export interface GraphMessage {
   id: string
   subject: string | null
@@ -116,7 +193,7 @@ export interface GraphMessage {
  * Requests the body as plain text via the Prefer header.
  */
 export async function fetchGraphMessage(messageId: string): Promise<GraphMessage | null> {
-  const mailbox = process.env.GRAPH_SENDER_EMAIL?.trim()
+  const mailbox = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!mailbox) throw new Error('GRAPH_SENDER_EMAIL not configured')
 
   const token = await getGraphToken()

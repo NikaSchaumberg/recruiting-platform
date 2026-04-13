@@ -4,9 +4,9 @@ import { NextResponse, after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { extractTextFromPDF } from '@/lib/pdf/extractor'
 import { screenCandidate } from '@/lib/claude/screener'
-import { sendTeamsNotification } from '@/lib/notifications/teams'
+import { sendTeamsNotification, sendTeamsWebhookNotification } from '@/lib/notifications/teams'
 import { sendOutlookNotification } from '@/lib/notifications/outlook'
-import { sendTeamsDm } from '@/lib/notifications/teamsDm'
+import { cleanEnv } from '@/lib/email/graphEmail'
 import { randomUUID } from 'crypto'
 
 const MAX_CV_SIZE = 8 * 1024 * 1024 // 8MB
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     // Verify job exists and is open
     const { data: job, error: jobError } = await adminClient
       .from('jobs')
-      .select('*, hiring_manager:profiles!jobs_hiring_manager_id_fkey(id, full_name, email, role, created_at)')
+      .select('*, hiring_manager:profiles!jobs_hiring_manager_id_fkey(id, full_name, email, role, created_at, teams_webhook_url)')
       .eq('id', jobId)
       .eq('status', 'open')
       .single()
@@ -161,7 +161,7 @@ async function runScreeningPipeline(params: {
     description: string
     requirements: string
     screening_criteria: string
-    hiring_manager: { id: string; full_name: string; email: string } | null
+    hiring_manager: { id: string; full_name: string; email: string; teams_webhook_url: string | null } | null
   }
   coverLetter: string | null
 }) {
@@ -215,13 +215,13 @@ async function runScreeningPipeline(params: {
 
     // HR_INBOX_EMAIL = where HR notification emails are sent (e.g. hr@exxircapital.com)
     // GRAPH_SENDER_EMAIL = the M365 user account that sends all emails (e.g. nschaumberg@exxircapital.com)
-    const hrEmail = process.env.HR_INBOX_EMAIL?.trim()
+    const hrEmail = cleanEnv(process.env.HR_INBOX_EMAIL)
     const hmEmail = job.hiring_manager?.email
     const hmName = job.hiring_manager?.full_name ?? 'Hiring Manager'
 
     console.log('[Screening] Sending notifications —', {
       hrInbox: hrEmail ?? '(HR_INBOX_EMAIL not set)',
-      graphSender: process.env.GRAPH_SENDER_EMAIL?.trim() ?? '(GRAPH_SENDER_EMAIL not set)',
+      graphSender: cleanEnv(process.env.GRAPH_SENDER_EMAIL) ?? '(GRAPH_SENDER_EMAIL not set)',
       hiringManager: hmEmail ?? '(no hiring manager)',
       applicantName,
       jobTitle: job.title,
@@ -243,7 +243,7 @@ async function runScreeningPipeline(params: {
     }
 
     // ─── Notifications ────────────────────────────────────────────────────────
-    // All 4 fire in parallel. Failures are logged individually but never block
+    // All fire in parallel. Failures are logged individually but never block
     // each other — Promise.allSettled ensures every task runs to completion.
 
     const notifications: { label: string; task: Promise<void> }[] = []
@@ -270,32 +270,19 @@ async function runScreeningPipeline(params: {
 
     // 3 & 4. Hiring manager notifications (only if assigned)
     if (hmEmail) {
-      // 3. Private Teams DM to hiring manager.
-      // Wrapped so that ACL/permission failures are logged but never affect
-      // the other notification tasks (hiring manager email already fires independently).
-      notifications.push({
-        label: `Hiring manager Teams DM → ${hmEmail}`,
-        task: sendTeamsDm({
-          recipientEmail: hmEmail,
-          recipientName: hmName,
-          applicantName,
-          applicantEmail,
-          jobTitle: job.title,
-          score: screening.score,
-          recommendation: screening.recommendation,
-          strengths: screening.strengths,
-          dashboardUrl,
-        }).catch((dmErr: unknown) => {
-          const msg = dmErr instanceof Error ? dmErr.message : String(dmErr)
-          console.warn(
-            '[Screening] Teams DM failed (hiring manager email was sent separately):',
-            msg,
-          )
-          // Swallow — email (task 4) delivers regardless
-        }),
-      })
+      const hmWebhookUrl = job.hiring_manager?.teams_webhook_url
 
-      // 4. Hiring manager email (always, independent of Teams DM)
+      // 3. Hiring manager personal Teams webhook — only if they have one configured
+      if (hmWebhookUrl) {
+        notifications.push({
+          label: 'Hiring manager personal Teams webhook',
+          task: sendTeamsWebhookNotification(hmWebhookUrl, notificationParams),
+        })
+      } else {
+        console.log('[Screening] Hiring manager has no personal Teams webhook — skipping step 3')
+      }
+
+      // 4. Hiring manager email
       notifications.push({
         label: `Hiring manager email → ${hmEmail}`,
         task: sendOutlookNotification({

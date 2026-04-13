@@ -11,7 +11,10 @@
       "Bash(vercel --version)",
       "Bash(vercel integration:*)",
       "Bash(vercel:*)",
-      "Bash(git -C /Users/nikaschaumberg/recruiting-platform status --porcelain)"
+      "Bash(git -C /Users/nikaschaumberg/recruiting-platform status --porcelain)",
+      "Bash(printf 'hr@exxircapital.com')",
+      "Bash(npx supabase:*)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

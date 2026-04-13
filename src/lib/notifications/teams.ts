@@ -1,4 +1,4 @@
-interface TeamsNotificationParams {
+export interface TeamsNotificationParams {
   applicantName: string
   applicantEmail: string
   jobTitle: string
@@ -27,16 +27,9 @@ function formatRecommendation(rec: string): string {
   return map[rec] ?? rec
 }
 
-export async function sendTeamsNotification(params: TeamsNotificationParams): Promise<void> {
-  const webhookUrl = process.env.TEAMS_WEBHOOK_URL
-  if (!webhookUrl) {
-    console.warn('[Teams] TEAMS_WEBHOOK_URL not set — skipping notification')
-    return
-  }
-
+function buildPayload(params: TeamsNotificationParams) {
   const scoreColor = getScoreColor(params.score)
-
-  const payload = {
+  return {
     type: 'message',
     attachments: [
       {
@@ -116,15 +109,34 @@ export async function sendTeamsNotification(params: TeamsNotificationParams): Pr
       },
     ],
   }
+}
 
+async function postToWebhook(webhookUrl: string, label: string, params: TeamsNotificationParams): Promise<void> {
+  console.log(`[Teams] Posting to ${label}`)
   const res = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(buildPayload(params)),
   })
-
   if (!res.ok) {
     const text = await res.text()
-    console.error(`[Teams] Webhook failed: ${res.status} ${text}`)
+    console.error(`[Teams] ${label} webhook failed: HTTP ${res.status} ${text}`)
+    throw new Error(`Teams webhook failed: HTTP ${res.status}`)
   }
+  console.log(`[Teams] ✓ ${label} delivered`)
+}
+
+/** Send to the HR channel (TEAMS_WEBHOOK_URL). */
+export async function sendTeamsNotification(params: TeamsNotificationParams): Promise<void> {
+  const webhookUrl = process.env.TEAMS_WEBHOOK_URL
+  if (!webhookUrl) {
+    console.warn('[Teams] TEAMS_WEBHOOK_URL not set — skipping HR channel notification')
+    return
+  }
+  await postToWebhook(webhookUrl, 'HR channel', params)
+}
+
+/** Send to a hiring manager's personal Teams webhook URL. */
+export async function sendTeamsWebhookNotification(webhookUrl: string, params: TeamsNotificationParams): Promise<void> {
+  await postToWebhook(webhookUrl, 'hiring manager personal channel', params)
 }

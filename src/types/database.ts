@@ -9,9 +9,14 @@ export type ApplicationStatus =
   | 'shortlisted'
   | 'interview_invited'
   | 'interview'
+  | 'first_interview'
+  | 'second_interview'
   | 'offer'
   | 'rejected'
   | 'hired'
+
+export type OfferStatus = 'draft' | 'sent' | 'signed'
+export type ContractStatus = 'draft' | 'sent' | 'signed'
 
 export interface CandidateEmail {
   id: string
@@ -45,6 +50,7 @@ export interface Profile {
   email: string
   role: UserRole
   created_at: string
+  teams_webhook_url?: string | null
 }
 
 export interface Job {
@@ -96,4 +102,51 @@ export interface AIScreening {
   recommendation: AIRecommendation
   raw_response: string | null
   screened_at: string
+}
+
+export interface EmailTemplate {
+  id: string
+  template_key: string | null
+  name: string
+  subject: string
+  body: string
+  is_system: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Offer {
+  id: string
+  application_id: string
+  candidate_name: string
+  job_title: string
+  department: string
+  location: string
+  start_date: string | null
+  salary: number | null
+  employment_type: string
+  reporting_manager: string
+  benefits: string
+  notes: string
+  hr_name: string
+  status: OfferStatus
+  created_at: string
+  sent_at: string | null
+}
+
+export interface Contract {
+  id: string
+  application_id: string
+  offer_id: string | null
+  candidate_name: string
+  job_title: string
+  start_date: string | null
+  salary: number | null
+  employment_type: string
+  reporting_manager: string
+  additional_terms: string
+  hr_name: string
+  status: ContractStatus
+  created_at: string
+  sent_at: string | null
 }

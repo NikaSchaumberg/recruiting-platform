@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const { email, full_name, role, password } = body
+  const { email, full_name, role, password, teams_webhook_url } = body
 
   if (!email || !full_name || !role || !password) {
     return NextResponse.json(
@@ -49,6 +49,13 @@ export async function POST(request: Request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (teams_webhook_url && data.user) {
+    await adminClient
+      .from('profiles')
+      .update({ teams_webhook_url })
+      .eq('id', data.user.id)
   }
 
   return NextResponse.json({ success: true, userId: data.user?.id }, { status: 201 })

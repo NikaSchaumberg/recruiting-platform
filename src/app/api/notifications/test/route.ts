@@ -3,7 +3,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendOutlookNotification } from '@/lib/notifications/outlook'
-import { sendTeamsDm } from '@/lib/notifications/teamsDm'
+import { sendTeamsNotification } from '@/lib/notifications/teams'
 
 const TEST_PAYLOAD = {
   applicantName: 'Test Candidate',
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Optional: ?target=email|teams-dm|all  (default: all)
+  // Optional: ?target=email|teams-hr|all  (default: all)
   const { searchParams } = new URL(request.url)
   const target = searchParams.get('target') ?? 'all'
 
@@ -52,22 +52,12 @@ export async function POST(request: Request) {
     }
   }
 
-  if (target === 'teams-dm' || target === 'all') {
+  if (target === 'teams-hr' || target === 'all') {
     try {
-      await sendTeamsDm({
-        recipientEmail: profile.email,
-        recipientName: profile.full_name,
-        applicantName: TEST_PAYLOAD.applicantName,
-        applicantEmail: TEST_PAYLOAD.applicantEmail,
-        jobTitle: TEST_PAYLOAD.jobTitle,
-        score: TEST_PAYLOAD.score,
-        recommendation: TEST_PAYLOAD.recommendation,
-        strengths: TEST_PAYLOAD.strengths,
-        dashboardUrl: TEST_PAYLOAD.dashboardUrl,
-      })
-      results.teamsDm = 'ok'
+      await sendTeamsNotification(TEST_PAYLOAD)
+      results.teamsHr = 'ok'
     } catch (err) {
-      results.teamsDm = `error: ${err instanceof Error ? err.message : String(err)}`
+      results.teamsHr = `error: ${err instanceof Error ? err.message : String(err)}`
     }
   }
 

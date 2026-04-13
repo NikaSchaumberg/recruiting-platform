@@ -5,19 +5,20 @@ import { useRouter } from 'next/navigation'
 import { EMAIL_TEMPLATES, fillTemplate } from '@/lib/email/templates'
 import type { ApplicationStatus } from '@/types/database'
 
-const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
-  { value: 'pending', label: 'New' },
-  { value: 'interview_invited', label: 'Interview Invited' },
-  { value: 'interview', label: 'Interview Scheduled' },
-  { value: 'offer', label: 'Offer Extended' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'hired', label: 'Hired' },
+const PIPELINE_STAGES: { value: ApplicationStatus; label: string }[] = [
+  { value: 'pending',          label: 'New' },
+  { value: 'first_interview',  label: '1st Interview' },
+  { value: 'second_interview', label: '2nd Interview' },
+  { value: 'offer',            label: 'Offer' },
+  { value: 'rejected',         label: 'Rejected' },
+  { value: 'hired',            label: 'Hired' },
 ]
 
-// Statuses that trigger an auto-email popup
+// Statuses that show an auto-email popup before committing
 const AUTO_EMAIL: Partial<Record<ApplicationStatus, string>> = {
-  rejected: 'rejection',
-  interview_invited: 'interview_invitation',
+  first_interview:  'first_interview_invitation',
+  second_interview: 'second_interview_invitation',
+  rejected:         'rejection',
 }
 
 const C = { caramel: '#C4A882', caramelDark: '#A8845E', border: '#E8E2D8', muted: '#78716C' }
@@ -50,21 +51,35 @@ export function StatusUpdater({
   const [sending, setSending] = useState(false)
   const [popupError, setPopupError] = useState<string | null>(null)
 
+  // Hired congrats modal
+  const [showHiredModal, setShowHiredModal] = useState(false)
+
   const vars = { candidate_name: candidateName, job_title: jobTitle, hr_name: hrName }
 
   function handleChange(newStatus: ApplicationStatus) {
     if (newStatus === status) return
 
+    if (newStatus === 'offer') {
+      // Update status first, then navigate to offer page
+      commitStatus('offer').then(() => {
+        router.push(`/dashboard/candidates/${applicationId}/offer`)
+      })
+      return
+    }
+
+    if (newStatus === 'hired') {
+      commitStatus('hired').then(() => setShowHiredModal(true))
+      return
+    }
+
     const templateId = AUTO_EMAIL[newStatus]
     if (templateId) {
-      // Show popup before committing
       const tpl = EMAIL_TEMPLATES.find((t) => t.id === templateId)!
       setEmailSubject(fillTemplate(tpl.subject, vars))
       setEmailBody(fillTemplate(tpl.body, vars))
       setPendingStatus(newStatus)
       setPopupError(null)
     } else {
-      // Just update status
       commitStatus(newStatus)
     }
   }
@@ -96,9 +111,7 @@ export function StatusUpdater({
     }
     setSending(true)
     setPopupError(null)
-
     try {
-      // Send email
       const emailRes = await fetch(`/api/applications/${applicationId}/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,8 +119,6 @@ export function StatusUpdater({
       })
       const emailData = await emailRes.json()
       if (!emailRes.ok) throw new Error(emailData.error ?? 'Failed to send email')
-
-      // Update status
       await commitStatus(pendingStatus)
       setPendingStatus(null)
     } catch (err) {
@@ -130,8 +141,9 @@ export function StatusUpdater({
     setPopupError(null)
   }
 
-  const displayLabel = STATUS_OPTIONS.find((o) => o.value === status)?.label
-    ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')
+  const displayLabel =
+    PIPELINE_STAGES.find((o) => o.value === status)?.label ??
+    status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')
 
   return (
     <>
@@ -146,19 +158,19 @@ export function StatusUpdater({
           value={status}
           onChange={(e) => handleChange(e.target.value as ApplicationStatus)}
           disabled={saving}
-          className="text-xs py-1.5 px-2 w-40 border border-stone-200 rounded-lg text-gray-700 focus:outline-none disabled:opacity-50 bg-white"
+          className="text-xs py-1.5 px-2 w-44 border border-stone-200 rounded-lg text-gray-700 focus:outline-none disabled:opacity-50 bg-white"
         >
-          {STATUS_OPTIONS.map((o) => (
+          {PIPELINE_STAGES.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
-          {/* Show current status if not in the list (e.g. screening/screened) */}
-          {!STATUS_OPTIONS.find((o) => o.value === status) && (
+          {/* Show current DB status if it's a system/AI status not in the pipeline */}
+          {!PIPELINE_STAGES.find((o) => o.value === status) && (
             <option value={status} disabled>{displayLabel}</option>
           )}
         </select>
       </div>
 
-      {/* Auto-email popup */}
+      {/* ── Auto-email popup ───────────────────────────────────────── */}
       {pendingStatus && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -167,14 +179,13 @@ export function StatusUpdater({
             onClick={handleCancel}
           />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style={{ maxHeight: '90vh' }}>
-            {/* Header */}
             <div className="px-6 py-4 border-b border-stone-100" style={{ background: 'linear-gradient(to right, #fdf9f4, #fff)' }}>
               <h2 className="text-sm font-semibold text-gray-900">
                 Send email to {candidateName}?
               </h2>
               <p className="text-xs text-stone-400 mt-0.5">
-                Status will change to <strong>{STATUS_OPTIONS.find((o) => o.value === pendingStatus)?.label}</strong>.
-                You can edit or skip sending the email.
+                Status will change to <strong>{PIPELINE_STAGES.find((o) => o.value === pendingStatus)?.label}</strong>.
+                {' '}You can edit or skip the email.
               </p>
             </div>
 
@@ -246,6 +257,31 @@ export function StatusUpdater({
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hired congratulations modal ────────────────────────────── */}
+      {showHiredModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)' }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center">
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Congratulations!</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              <strong>{candidateName}</strong> has been marked as <strong>Hired</strong> for <strong>{jobTitle}</strong>.
+            </p>
+            <button
+              onClick={() => setShowHiredModal(false)}
+              className="w-full py-2.5 text-sm font-semibold text-white rounded-lg"
+              style={{ backgroundColor: C.caramel }}
+            >
+              Done
+            </button>
           </div>
         </div>
       )}

@@ -17,6 +17,7 @@ export function InviteForm() {
   const [fullName, setFullName] = useState('')
   const [role, setRole] = useState('hiring_manager')
   const [password, setPassword] = useState('')
+  const [teamsWebhookUrl, setTeamsWebhookUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
@@ -30,7 +31,7 @@ export function InviteForm() {
       const res = await fetch('/api/team/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, full_name: fullName, role, password }),
+        body: JSON.stringify({ email, full_name: fullName, role, password, teams_webhook_url: teamsWebhookUrl || undefined }),
       })
 
       if (!res.ok) {
@@ -43,6 +44,7 @@ export function InviteForm() {
       setFullName('')
       setPassword('')
       setRole('hiring_manager')
+      setTeamsWebhookUrl('')
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
@@ -100,8 +102,26 @@ export function InviteForm() {
           label="Role"
           options={ROLE_OPTIONS}
           value={role}
-          onChange={(e) => setRole(e.target.value)}
+          onChange={(e) => {
+            setRole(e.target.value)
+            if (e.target.value !== 'hiring_manager') setTeamsWebhookUrl('')
+          }}
         />
+        {role === 'hiring_manager' && (
+          <div>
+            <Input
+              id="invite_teams_webhook"
+              label="Personal Teams Webhook URL (optional)"
+              type="url"
+              placeholder="https://..."
+              value={teamsWebhookUrl}
+              onChange={(e) => setTeamsWebhookUrl(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Create a webhook in your personal Teams channel to receive private notifications.
+            </p>
+          </div>
+        )}
         <Button type="submit" className="w-full" loading={loading}>
           Create Account
         </Button>
