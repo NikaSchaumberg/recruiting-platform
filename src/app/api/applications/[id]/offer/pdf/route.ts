@@ -2,22 +2,18 @@ export const runtime = 'nodejs'
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { PDFDocument, StandardFonts, rgb, PageSizes } from 'pdf-lib'
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
+  await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const admin = createAdminClient()
   const body = await request.json()
-
-  // Use passed offer data (live preview) or fetch saved
   const offer = body.offer ?? null
   if (!offer) return NextResponse.json({ error: 'offer data required' }, { status: 400 })
 
@@ -49,221 +45,226 @@ export async function generateOfferPdf(offer: {
   hr_name?: string
 }): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create()
-  const page = pdfDoc.addPage(PageSizes.A4)
+  const page = pdfDoc.addPage(PageSizes.Letter)
   const { width, height } = page.getSize()
 
-  const timesRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman)
+  const timesRoman     = await pdfDoc.embedFont(StandardFonts.TimesRoman)
   const timesRomanBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold)
-  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
-  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const helvetica      = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const helveticaBold  = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-  const margin = 60
+  const margin = 72          // 1 inch
   const contentWidth = width - margin * 2
 
-  // Colours
-  const black = rgb(0, 0, 0)
-  const caramel = rgb(0.769, 0.659, 0.510)   // #C4A882
+  const black    = rgb(0, 0, 0)
   const darkGray = rgb(0.2, 0.2, 0.2)
-  const midGray = rgb(0.45, 0.45, 0.45)
-  const lightGray = rgb(0.85, 0.85, 0.85)
+  const midGray  = rgb(0.45, 0.45, 0.45)
+  const lightGray = rgb(0.8, 0.8, 0.8)
+  const caramel  = rgb(0.769, 0.659, 0.510)   // #C4A882
 
   let y = height - margin
 
-  // ── Header band ─────────────────────────────────────────────────────
-  page.drawRectangle({ x: 0, y: height - 90, width, height: 90, color: rgb(0.102, 0.102, 0.102) })
+  // ── HEADER ────────────────────────────────────────────────────────────
+  // Top rule
+  page.drawRectangle({ x: margin, y: y - 2, width: contentWidth, height: 2, color: caramel })
+  y -= 22
 
-  page.drawText('EXXIR CAPITAL', {
-    x: margin,
-    y: height - 42,
-    size: 20,
-    font: helveticaBold,
-    color: rgb(1, 1, 1),
-  })
-  page.drawText('OFFER OF EMPLOYMENT', {
-    x: margin,
-    y: height - 64,
-    size: 9,
-    font: helvetica,
-    color: caramel,
-    characterSpacing: 2,
+  // Company name
+  page.drawText('EXXIR LLC', {
+    x: margin, y,
+    size: 16, font: helveticaBold, color: black,
   })
 
-  // Date top right
+  // Date right-aligned
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const dateWidth = helvetica.widthOfTextAtSize(today, 9)
+  const dateW = helvetica.widthOfTextAtSize(today, 10)
   page.drawText(today, {
-    x: width - margin - dateWidth,
-    y: height - 52,
-    size: 9,
-    font: helvetica,
-    color: rgb(0.7, 0.7, 0.7),
+    x: width - margin - dateW, y: y + 2,
+    size: 10, font: helvetica, color: midGray,
   })
 
-  y = height - 115
-
-  // ── Candidate name ───────────────────────────────────────────────────
-  page.drawText(offer.candidate_name, {
-    x: margin,
-    y,
-    size: 15,
-    font: timesRomanBold,
-    color: darkGray,
-  })
-  y -= 18
-
-  if (offer.job_title) {
-    page.drawText(`Re: Offer of Employment — ${offer.job_title}`, {
-      x: margin,
-      y,
-      size: 10,
-      font: timesRoman,
-      color: midGray,
-    })
-    y -= 24
-  }
-
-  // ── Divider ──────────────────────────────────────────────────────────
+  y -= 6
   page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 0.5, color: lightGray })
+  y -= 28
+
+  // ── GREETING ──────────────────────────────────────────────────────────
+  page.drawText(`Dear ${offer.candidate_name},`, {
+    x: margin, y,
+    size: 11, font: timesRoman, color: black,
+  })
   y -= 20
 
-  // ── Opening paragraph ────────────────────────────────────────────────
-  const greeting = `Dear ${offer.candidate_name},`
-  page.drawText(greeting, { x: margin, y, size: 11, font: timesRoman, color: darkGray })
-  y -= 18
+  // Opening paragraph
+  const reportingTo = offer.reporting_manager ? `, reporting to ${offer.reporting_manager}` : ''
+  const openPara =
+    `We are pleased to offer you the position of ${offer.job_title} with Exxir LLC${reportingTo}. ` +
+    `This offer is subject to the terms and conditions described below.`
+  const openLines = wrapText(openPara, timesRoman, 11, contentWidth)
+  for (const line of openLines) {
+    page.drawText(line, { x: margin, y, size: 11, font: timesRoman, color: black })
+    y -= 16
+  }
+  y -= 12
 
-  const openingLines = [
-    `We are pleased to extend this offer of employment to you for the position of`,
-    `${offer.job_title}${offer.department ? ` in the ${offer.department} department` : ''}${offer.location ? `, based in ${offer.location}` : ''}.`,
-    ``,
-    `Please review the terms of this offer below.`,
-  ]
-  for (const line of openingLines) {
-    page.drawText(line, { x: margin, y, size: 10, font: timesRoman, color: darkGray })
+  // ── SECTION: POSITION DETAILS ─────────────────────────────────────────
+  y = drawSectionHeader(page, 'Position Details', margin, y, contentWidth, helveticaBold, caramel)
+
+  y = drawField(page, 'Job Title', offer.job_title, margin, y, timesRoman, helveticaBold, darkGray, midGray)
+
+  const startLabel = offer.start_date
+    ? new Date(offer.start_date + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '____________'
+  y = drawField(page, 'Beginning Date', startLabel, margin, y, timesRoman, helveticaBold, darkGray, midGray)
+  y = drawField(page, 'Employment Classification', 'At-Will', margin, y, timesRoman, helveticaBold, darkGray, midGray)
+
+  y -= 8
+
+  // ── SECTION: COMPENSATION ─────────────────────────────────────────────
+  y = drawSectionHeader(page, 'Compensation', margin, y, contentWidth, helveticaBold, caramel)
+
+  const salaryText = offer.salary
+    ? `$${Number(offer.salary).toLocaleString()} annually`
+    : '____________'
+  y = drawField(page, 'Base Salary', salaryText, margin, y, timesRoman, helveticaBold, darkGray, midGray)
+  y -= 8
+
+  // ── SECTION: BENEFITS ─────────────────────────────────────────────────
+  y = drawSectionHeader(page, 'Benefits', margin, y, contentWidth, helveticaBold, caramel)
+
+  const benefitsText = offer.benefits ||
+    'You will receive two weeks (10 days) paid vacation and five (5) sick days per calendar year, ' +
+    'both of which activate after completing 90 days of employment. Medical benefits are provided ' +
+    'through Blue Cross Blue Shield of Texas and become effective after your first full month of employment.'
+  const benefitLines = wrapText(benefitsText, timesRoman, 11, contentWidth)
+  for (const line of benefitLines) {
+    page.drawText(line, { x: margin, y, size: 11, font: timesRoman, color: black })
+    y -= 16
+  }
+  y -= 12
+
+  // ── SECTION: WORK PRODUCT & IP ────────────────────────────────────────
+  y = drawSectionHeader(page, 'Work Product and Intellectual Property', margin, y, contentWidth, helveticaBold, caramel)
+
+  const ipText =
+    'All work product, inventions, discoveries, and developments created, conceived, or reduced to ' +
+    'practice by you during your employment that relate to the business of Exxir LLC shall be the ' +
+    'sole and exclusive property of Exxir LLC. You agree to promptly disclose and assign all such ' +
+    'work product to the Company.'
+  const ipLines = wrapText(ipText, timesRoman, 11, contentWidth)
+  for (const line of ipLines) {
+    page.drawText(line, { x: margin, y, size: 11, font: timesRoman, color: black })
+    y -= 16
+  }
+  y -= 12
+
+  // ── SECTION: CONFIDENTIAL INFORMATION ────────────────────────────────
+  y = drawSectionHeader(page, 'Confidential Information', margin, y, contentWidth, helveticaBold, caramel)
+
+  const confText =
+    'During and after your employment, you agree to maintain in strict confidence all proprietary ' +
+    'and confidential information belonging to Exxir LLC, including but not limited to trade secrets, ' +
+    'client information, business strategies, and financial data. You agree not to disclose such ' +
+    'information to any third party without prior written consent from the Company.'
+  const confLines = wrapText(confText, timesRoman, 11, contentWidth)
+  for (const line of confLines) {
+    page.drawText(line, { x: margin, y, size: 11, font: timesRoman, color: black })
+    y -= 16
+  }
+  y -= 12
+
+  // ── BACKGROUND CHECK NOTE ─────────────────────────────────────────────
+  const bgText = 'Please note that your employment is contingent upon successfully passing a background check.'
+  const bgLines = wrapText(bgText, timesRoman, 10, contentWidth)
+  for (const line of bgLines) {
+    page.drawText(line, { x: margin, y, size: 10, font: timesRoman, color: midGray })
     y -= 15
   }
-  y -= 10
-
-  // ── Details section ──────────────────────────────────────────────────
-  const drawField = (label: string, value: string) => {
-    if (!value) return
-    page.drawText(label.toUpperCase(), {
-      x: margin,
-      y,
-      size: 7.5,
-      font: helveticaBold,
-      color: caramel,
-      characterSpacing: 1,
-    })
-    y -= 13
-    page.drawText(value, { x: margin, y, size: 10.5, font: timesRoman, color: darkGray })
-    y -= 20
-  }
-
-  const drawSectionHeader = (title: string) => {
-    y -= 6
-    page.drawRectangle({ x: margin, y: y - 2, width: contentWidth, height: 20, color: rgb(0.976, 0.973, 0.965) })
-    page.drawText(title.toUpperCase(), {
-      x: margin + 8,
-      y: y + 3,
-      size: 8,
-      font: helveticaBold,
-      color: midGray,
-      characterSpacing: 1.5,
-    })
-    y -= 22
-  }
-
-  drawSectionHeader('Employment Details')
-
-  drawField('Position', offer.job_title)
-  if (offer.department) drawField('Department', offer.department)
-  if (offer.location) drawField('Location', offer.location)
-  if (offer.start_date) drawField('Start Date', new Date(offer.start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }))
-  if (offer.salary) drawField('Compensation', `$${Number(offer.salary).toLocaleString()} per year`)
-  if (offer.employment_type) drawField('Employment Type', formatEmploymentType(offer.employment_type))
-  if (offer.reporting_manager) drawField('Reporting Manager', offer.reporting_manager)
-
-  if (offer.benefits) {
-    drawSectionHeader('Benefits')
-    // Wrap long benefits text
-    const benefitLines = wrapText(offer.benefits, timesRoman, 10, contentWidth)
-    for (const line of benefitLines) {
-      page.drawText(line, { x: margin, y, size: 10, font: timesRoman, color: darkGray })
-      y -= 14
-    }
-    y -= 6
-  }
+  y -= 12
 
   if (offer.notes) {
-    drawSectionHeader('Additional Notes')
-    const noteLines = wrapText(offer.notes, timesRoman, 10, contentWidth)
+    y = drawSectionHeader(page, 'Additional Notes', margin, y, contentWidth, helveticaBold, caramel)
+    const noteLines = wrapText(offer.notes, timesRoman, 11, contentWidth)
     for (const line of noteLines) {
-      page.drawText(line, { x: margin, y, size: 10, font: timesRoman, color: darkGray })
-      y -= 14
+      page.drawText(line, { x: margin, y, size: 11, font: timesRoman, color: black })
+      y -= 16
     }
-    y -= 6
+    y -= 12
   }
 
-  // ── Closing ──────────────────────────────────────────────────────────
-  y -= 10
-  const closingLines = [
-    'We look forward to welcoming you to the Exxir Capital team. Please sign and',
-    'return this letter to confirm your acceptance of this offer.',
-  ]
+  // ── CLOSING ───────────────────────────────────────────────────────────
+  const closingText =
+    'We hope you will find the above terms satisfactory so that we may proceed towards welcoming you to the team. ' +
+    'Please sign below to indicate your acceptance of this offer.'
+  const closingLines = wrapText(closingText, timesRoman, 11, contentWidth)
   for (const line of closingLines) {
-    page.drawText(line, { x: margin, y, size: 10, font: timesRoman, color: darkGray })
-    y -= 14
+    page.drawText(line, { x: margin, y, size: 11, font: timesRoman, color: black })
+    y -= 16
   }
+  y -= 24
 
-  y -= 30
+  // ── SIGNATURES ────────────────────────────────────────────────────────
+  const sigY = y
+  const sigWidth = 180
+  const col2X = margin + sigWidth + 60
 
-  // ── Signature block ──────────────────────────────────────────────────
-  page.drawText('Sincerely,', { x: margin, y, size: 10, font: timesRoman, color: darkGray })
-  y -= 40
+  // Company side
+  page.drawText('For Exxir LLC:', { x: margin, y: sigY, size: 10, font: timesRomanBold, color: darkGray })
+  page.drawLine({ start: { x: margin, y: sigY - 30 }, end: { x: margin + sigWidth, y: sigY - 30 }, thickness: 0.5, color: lightGray })
+  page.drawText(offer.hr_name || 'Authorized Signatory', { x: margin, y: sigY - 44, size: 9, font: timesRoman, color: darkGray })
+  page.drawText('Title: _______________', { x: margin, y: sigY - 58, size: 9, font: timesRoman, color: midGray })
+  page.drawText('Date: ________________', { x: margin, y: sigY - 72, size: 9, font: timesRoman, color: midGray })
 
-  page.drawLine({ start: { x: margin, y }, end: { x: margin + 160, y }, thickness: 0.5, color: lightGray })
-  y -= 14
-  page.drawText(offer.hr_name || 'HR Representative', { x: margin, y, size: 10, font: timesRomanBold, color: darkGray })
-  y -= 14
-  page.drawText('Exxir Capital', { x: margin, y, size: 9, font: timesRoman, color: midGray })
+  // Employee side
+  page.drawText('Employee Acceptance:', { x: col2X, y: sigY, size: 10, font: timesRomanBold, color: darkGray })
+  page.drawLine({ start: { x: col2X, y: sigY - 30 }, end: { x: col2X + sigWidth, y: sigY - 30 }, thickness: 0.5, color: lightGray })
+  page.drawText(offer.candidate_name, { x: col2X, y: sigY - 44, size: 9, font: timesRoman, color: darkGray })
+  page.drawText('Date: ________________', { x: col2X, y: sigY - 58, size: 9, font: timesRoman, color: midGray })
 
-  // Candidate acceptance block
-  const acceptX = margin + 240
-  let acceptY = y + 54
-  page.drawText('Candidate Acceptance', {
-    x: acceptX,
-    y: acceptY,
-    size: 8,
-    font: helveticaBold,
-    color: midGray,
-    characterSpacing: 0.5,
-  })
-  acceptY -= 30
-  page.drawLine({ start: { x: acceptX, y: acceptY }, end: { x: acceptX + 160, y: acceptY }, thickness: 0.5, color: lightGray })
-  acceptY -= 14
-  page.drawText('Signature & Date', { x: acceptX, y: acceptY, size: 8, font: helvetica, color: rgb(0.65, 0.65, 0.65) })
-
-  // ── Footer ───────────────────────────────────────────────────────────
-  page.drawLine({ start: { x: margin, y: 38 }, end: { x: width - margin, y: 38 }, thickness: 0.4, color: rgb(0.85, 0.85, 0.85) })
-  page.drawText('Exxir Capital  ·  Confidential  ·  This offer is contingent on satisfactory background verification.', {
-    x: margin,
-    y: 24,
-    size: 7,
-    font: helvetica,
-    color: rgb(0.6, 0.6, 0.6),
+  // ── FOOTER ────────────────────────────────────────────────────────────
+  page.drawLine({ start: { x: margin, y: 42 }, end: { x: width - margin, y: 42 }, thickness: 0.4, color: lightGray })
+  page.drawText('Jungle Fitness Studio  ·  200 N Bishop Ave Suite 106, Dallas, TX 75208', {
+    x: margin, y: 28,
+    size: 8, font: helvetica, color: midGray,
   })
 
   return pdfDoc.save()
 }
 
-function formatEmploymentType(type: string): string {
-  const map: Record<string, string> = {
-    full_time: 'Full-time',
-    part_time: 'Part-time',
-    contract: 'Contract',
-    internship: 'Internship',
-  }
-  return map[type] ?? type
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function drawSectionHeader(
+  page: ReturnType<PDFDocument['addPage']>,
+  title: string,
+  margin: number,
+  y: number,
+  contentWidth: number,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  color: ReturnType<typeof rgb>
+): number {
+  page.drawRectangle({ x: margin, y: y - 4, width: contentWidth, height: 18, color: rgb(0.97, 0.97, 0.97) })
+  page.drawRectangle({ x: margin, y: y - 4, width: 3, height: 18, color: color })
+  page.drawText(title.toUpperCase(), {
+    x: margin + 10, y: y + 1,
+    size: 8, font, color: rgb(0.3, 0.3, 0.3),
+    characterSpacing: 1,
+  })
+  return y - 28
+}
+
+function drawField(
+  page: ReturnType<PDFDocument['addPage']>,
+  label: string,
+  value: string,
+  margin: number,
+  y: number,
+  bodyFont: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  labelFont: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  valueColor: ReturnType<typeof rgb>,
+  labelColor: ReturnType<typeof rgb>
+): number {
+  page.drawText(label + ':', { x: margin, y, size: 10, font: labelFont, color: labelColor })
+  page.drawText(value, { x: margin + 160, y, size: 11, font: bodyFont, color: valueColor })
+  return y - 18
 }
 
 function wrapText(

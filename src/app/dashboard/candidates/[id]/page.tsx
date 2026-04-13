@@ -92,11 +92,18 @@ export default async function CandidateDetailPage({
   }
 
   const adminClient = createAdminClient()
-  const { data: signedUrlData } = await adminClient.storage
-    .from('cvs')
-    .createSignedUrl(application.cv_path, 3600)
+
+  // Fetch offer and contract status
+  const [{ data: offer }, { data: contract }, { data: signedUrlData }] = await Promise.all([
+    adminClient.from('offers').select('id, status, sent_at').eq('application_id', id).maybeSingle(),
+    adminClient.from('contracts').select('id, status, sent_at').eq('application_id', id).maybeSingle(),
+    adminClient.storage.from('cvs').createSignedUrl(application.cv_path, 3600),
+  ])
 
   const cvUrl = signedUrlData?.signedUrl ?? null
+  const offerSent = offer?.status === 'sent' || offer?.status === 'signed'
+  const contractSent = contract?.status === 'sent' || contract?.status === 'signed'
+  const canManageOffer = profile.role === 'admin' || profile.role === 'hiring_manager'
 
   // Fetch email history and messages
   const [{ data: rawEmails }, { data: rawMessages }] = await Promise.all([
@@ -218,6 +225,39 @@ export default async function CandidateDetailPage({
                 </Badge>
               </div>
             </div>
+
+            {/* Offer / Contract actions */}
+            {canManageOffer && (
+              <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-stone-100">
+                <Link
+                  href={`/dashboard/candidates/${id}/offer`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                  style={offerSent
+                    ? { color: '#15803d', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+                    : { color: '#374151', backgroundColor: '#f9fafb', borderColor: '#e5e7eb' }}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {offerSent ? 'Offer Sent' : offer ? 'View Offer' : 'Create Offer'}
+                </Link>
+
+                {offerSent && (
+                  <Link
+                    href={`/dashboard/candidates/${id}/contract`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                    style={contractSent
+                      ? { color: '#15803d', backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }
+                      : { color: '#92400e', backgroundColor: '#fffbeb', borderColor: '#fde68a' }}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    {contractSent ? 'Contract Sent' : 'Send Contract'}
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
 
           {/* AI Screening Results */}

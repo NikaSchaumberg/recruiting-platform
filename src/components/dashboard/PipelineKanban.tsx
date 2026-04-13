@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'next/navigation'
 import { getStatusColor, getPipelineStage, getStatusLabel } from '@/lib/utils/formatting'
 
 interface KanbanApp {
