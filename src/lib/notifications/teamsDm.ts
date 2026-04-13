@@ -2,10 +2,13 @@
  * Send a private Teams chat message to an individual user via Microsoft Graph API.
  *
  * Required Azure app permissions (Application type, admin consent required):
- *   - Chat.Create              — create oneOnOne chats between two users
- *   - Chat.ReadWrite.All       — send messages into those chats
+ *   - User.Read.All             — resolve email addresses to AAD Object IDs
+ *   - Chat.Create               — create oneOnOne chats
+ *   - Chat.ReadWrite.All        — send messages into those chats
  *
- * The message appears in the chat between GRAPH_SENDER_EMAIL and the recipient.
+ * Known limitation: AclCheckFailed (403) can occur even with correct permissions
+ * if the tenant's Teams ACL policies block programmatic chat creation. In that case
+ * the hiring manager email notification (sent independently) still delivers.
  */
 
 import { getGraphToken } from '@/lib/email/graphEmail'
@@ -38,85 +41,120 @@ function scoreEmoji(score: number): string {
   return '🔴'
 }
 
+/** Resolve a UPN/email to an AAD Object ID. Requires User.Read.All (Application). */
+async function resolveUserId(token: string, email: string): Promise<string> {
+  const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(email)}?$select=id,displayName,userPrincipalName`
+  console.log(`[TeamsDM] Resolving user ID for ${email} → GET ${url}`)
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const raw = await res.text()
+  console.log(`[TeamsDM] User lookup HTTP ${res.status}:`, raw.slice(0, 400))
+
+  if (!res.ok) {
+    const parsed = safeParseJson(raw)
+    const msg = parsed?.error?.message ?? raw
+    throw new Error(`[TeamsDM] Cannot resolve user "${email}": HTTP ${res.status} — ${msg}`)
+  }
+
+  const data = JSON.parse(raw)
+  console.log(`[TeamsDM] Resolved ${email} → OID: ${data.id}, UPN: ${data.userPrincipalName}`)
+  return data.id as string
+}
+
+interface GraphErrorResponse {
+  error?: { code?: string; message?: string }
+}
+
+function safeParseJson(text: string): GraphErrorResponse | null {
+  try { return JSON.parse(text) as GraphErrorResponse } catch { return null }
+}
+
 /**
- * Create or retrieve a 1:1 Teams chat between sender and recipient.
- * Graph is idempotent — if the chat already exists it returns the existing one.
- * Returns the chatId (e.g. "19:xxx@thread.v2").
+ * Attempt 1: POST /v1.0/users/{senderOid}/chats (user-scoped endpoint)
+ * Attempt 2: POST /v1.0/chats (root endpoint — may hit AclCheckFailed on some tenants)
+ * Returns the chatId on success.
  */
 async function getOrCreateOneOnOneChat(
   token: string,
-  senderEmail: string,
-  recipientEmail: string
+  senderOid: string,
+  recipientOid: string,
 ): Promise<string> {
-  const requestBody = {
+  const membersBind = (oid: string) =>
+    `https://graph.microsoft.com/v1.0/users('${oid}')`
+
+  const body = {
     chatType: 'oneOnOne',
     members: [
       {
         '@odata.type': '#microsoft.graph.aadUserConversationMember',
         roles: ['owner'],
-        'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${senderEmail}')`,
+        'user@odata.bind': membersBind(senderOid),
       },
       {
         '@odata.type': '#microsoft.graph.aadUserConversationMember',
         roles: ['owner'],
-        'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${recipientEmail}')`,
+        'user@odata.bind': membersBind(recipientOid),
       },
     ],
   }
 
-  console.log('[TeamsDM] POST /v1.0/chats — request body:', JSON.stringify(requestBody, null, 2))
+  // Try user-scoped endpoint first, then root endpoint
+  const endpoints = [
+    `https://graph.microsoft.com/v1.0/users/${senderOid}/chats`,
+    `https://graph.microsoft.com/v1.0/chats`,
+  ]
 
-  const res = await fetch('https://graph.microsoft.com/v1.0/chats', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  })
+  let lastError = ''
+  for (const url of endpoints) {
+    console.log(`[TeamsDM] POST ${url}`)
+    console.log(`[TeamsDM] Request body:`, JSON.stringify(body, null, 2))
 
-  // Always read the body for diagnostics
-  const rawBody = await res.text()
-  console.log(`[TeamsDM] POST /v1.0/chats — HTTP ${res.status}:`, rawBody)
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
 
-  if (!res.ok) {
-    let code = res.status.toString()
-    try {
-      const parsed = JSON.parse(rawBody)
-      const err = parsed?.error
-      code = `HTTP ${res.status} — code: ${err?.code ?? '?'}, message: ${err?.message ?? rawBody}`
+    const raw = await res.text()
+    console.log(`[TeamsDM] HTTP ${res.status} from ${url}:`, raw)
 
-      // Surface permission errors explicitly
-      if (err?.code === 'Authorization_RequestDenied' || err?.code === 'Forbidden' || res.status === 403) {
-        console.error('[TeamsDM] ❌ PERMISSION ERROR — ensure these Application permissions are granted in Azure portal with admin consent:')
-        console.error('[TeamsDM]   • Chat.Create        (Application)')
-        console.error('[TeamsDM]   • Chat.ReadWrite.All (Application)')
-      }
-    } catch {
-      code = `HTTP ${res.status} — ${rawBody}`
+    if (res.ok) {
+      const data = JSON.parse(raw)
+      console.log(`[TeamsDM] Chat created/retrieved — ID: ${data.id}`)
+      return data.id as string
     }
-    throw new Error(`[TeamsDM] Chat creation failed: ${code}`)
+
+    const parsed = safeParseJson(raw)
+    const errCode = parsed?.error?.code ?? '?'
+    const errMsg = parsed?.error?.message ?? raw
+
+    if (res.status === 403) {
+      console.error(`[TeamsDM] ❌ 403 ${errCode} on ${url}: ${errMsg}`)
+      if (String(errCode) === 'AclCheckFailed') {
+        console.error('[TeamsDM] AclCheckFailed — this is a tenant Teams ACL policy restriction.')
+        console.error('[TeamsDM] The app has the right Graph permissions but the tenant policy blocks')
+        console.error('[TeamsDM] programmatic oneOnOne chat creation. To fix, ask a Teams admin to run:')
+        console.error('[TeamsDM]   Set-CsTeamsMessagingPolicy -AllowUserChat $true')
+        console.error('[TeamsDM] Or grant the app the Chat.Create permission AND ensure the sender')
+        console.error('[TeamsDM] account (GRAPH_SENDER_EMAIL) has a Teams license and is active.')
+      }
+    }
+
+    lastError = `HTTP ${res.status} (${errCode}): ${errMsg}`
   }
 
-  const data = JSON.parse(rawBody)
-  const chatId: string = data.id
-  console.log('[TeamsDM] Chat ID obtained:', chatId)
-  return chatId
+  throw new Error(`[TeamsDM] All chat creation attempts failed. Last error: ${lastError}`)
 }
 
-/**
- * Post a message to a Teams chat by chatId.
- * NOTE: chatId must NOT be URI-encoded — Graph API expects the raw ID in the path.
- */
-async function postChatMessage(
-  token: string,
-  chatId: string,
-  htmlContent: string
-): Promise<void> {
-  // Do NOT use encodeURIComponent here — chatIds contain ":" and "@" which Graph
-  // handles in the raw form. Double-encoding breaks the request.
+/** Post a message to a Teams chat. chatId must NOT be URI-encoded. */
+async function postChatMessage(token: string, chatId: string, html: string): Promise<void> {
   const url = `https://graph.microsoft.com/v1.0/chats/${chatId}/messages`
-  console.log('[TeamsDM] POST', url)
+  console.log(`[TeamsDM] POST ${url}`)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -124,30 +162,15 @@ async function postChatMessage(
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      body: {
-        contentType: 'html',
-        content: htmlContent,
-      },
-    }),
+    body: JSON.stringify({ body: { contentType: 'html', content: html } }),
   })
 
-  const rawBody = await res.text()
-  console.log(`[TeamsDM] POST …/messages — HTTP ${res.status}:`, rawBody.slice(0, 500))
+  const raw = await res.text()
+  console.log(`[TeamsDM] Message send HTTP ${res.status}:`, raw.slice(0, 400))
 
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`
-    try {
-      const parsed = JSON.parse(rawBody)
-      const err = parsed?.error
-      detail = `HTTP ${res.status} — code: ${err?.code ?? '?'}, message: ${err?.message ?? rawBody}`
-
-      if (res.status === 403) {
-        console.error('[TeamsDM] ❌ PERMISSION ERROR on message send — ensure Chat.ReadWrite.All (Application) is granted with admin consent')
-      }
-    } catch {
-      detail = `HTTP ${res.status} — ${rawBody}`
-    }
+    const parsed = safeParseJson(raw)
+    const detail = `HTTP ${res.status} (${parsed?.error?.code ?? '?'}): ${parsed?.error?.message ?? raw}`
     throw new Error(`[TeamsDM] Message send failed: ${detail}`)
   }
 }
@@ -158,27 +181,29 @@ export async function sendTeamsDm(params: TeamsDmParams): Promise<void> {
   const clientId = process.env.AZURE_CLIENT_ID
   const clientSecret = process.env.AZURE_CLIENT_SECRET
 
-  // Log config state (never log the secret itself)
-  console.log('[TeamsDM] Config check:', {
+  console.log('[TeamsDM] Config:', {
     GRAPH_SENDER_EMAIL: senderEmail ?? '(MISSING)',
-    AZURE_TENANT_ID: tenantId ? '✓ set' : '(MISSING)',
-    AZURE_CLIENT_ID: clientId ? '✓ set' : '(MISSING)',
-    AZURE_CLIENT_SECRET: clientSecret ? '✓ set' : '(MISSING)',
+    AZURE_TENANT_ID: tenantId ? '✓' : '(MISSING)',
+    AZURE_CLIENT_ID: clientId ? '✓' : '(MISSING)',
+    AZURE_CLIENT_SECRET: clientSecret ? '✓' : '(MISSING)',
     recipientEmail: params.recipientEmail,
-    recipientName: params.recipientName,
   })
 
   if (!senderEmail) throw new Error('[TeamsDM] GRAPH_SENDER_EMAIL not configured')
   if (!tenantId || !clientId || !clientSecret) {
-    throw new Error('[TeamsDM] Missing Azure credentials (AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET)')
+    throw new Error('[TeamsDM] Missing Azure credentials')
   }
-
-  console.log(`[TeamsDM] Starting — from: ${senderEmail} → to: ${params.recipientEmail}`)
 
   const token = await getGraphToken()
   console.log('[TeamsDM] Graph token acquired ✓')
 
-  const chatId = await getOrCreateOneOnOneChat(token, senderEmail, params.recipientEmail)
+  // Resolve emails → AAD Object IDs (avoids UPN-based ACL issues in some tenants)
+  const [senderOid, recipientOid] = await Promise.all([
+    resolveUserId(token, senderEmail),
+    resolveUserId(token, params.recipientEmail),
+  ])
+
+  const chatId = await getOrCreateOneOnOneChat(token, senderOid, recipientOid)
 
   const top3 = params.strengths.slice(0, 3)
   const html = [

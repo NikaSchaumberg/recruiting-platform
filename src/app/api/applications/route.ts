@@ -270,7 +270,9 @@ async function runScreeningPipeline(params: {
 
     // 3 & 4. Hiring manager notifications (only if assigned)
     if (hmEmail) {
-      // 3. Private Teams DM to hiring manager
+      // 3. Private Teams DM to hiring manager.
+      // Wrapped so that ACL/permission failures are logged but never affect
+      // the other notification tasks (hiring manager email already fires independently).
       notifications.push({
         label: `Hiring manager Teams DM → ${hmEmail}`,
         task: sendTeamsDm({
@@ -283,6 +285,13 @@ async function runScreeningPipeline(params: {
           recommendation: screening.recommendation,
           strengths: screening.strengths,
           dashboardUrl,
+        }).catch((dmErr: unknown) => {
+          const msg = dmErr instanceof Error ? dmErr.message : String(dmErr)
+          console.warn(
+            '[Screening] Teams DM failed (hiring manager email was sent separately):',
+            msg,
+          )
+          // Swallow — email (task 4) delivers regardless
         }),
       })
 
