@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendGraphEmailWithAttachment } from '@/lib/email/graphEmail'
-import { generateOfferPdf } from '@/app/api/applications/[id]/offer/pdf/route'
+import { generateOfferPdf } from '@/lib/pdf/offerPdf'
 import { EMAIL_TEMPLATES, fillTemplate } from '@/lib/email/templates'
 
 export async function POST(
