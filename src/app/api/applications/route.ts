@@ -213,9 +213,8 @@ async function runScreeningPipeline(params: {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
     const dashboardUrl = `${baseUrl}/dashboard/candidates/${applicationId}`
 
-    // HR_INBOX_EMAIL = where HR notification emails are sent (e.g. hr@exxircapital.com)
     // GRAPH_SENDER_EMAIL = the M365 user account that sends all emails (e.g. nschaumberg@exxircapital.com)
-    const hrEmail = cleanEnv(process.env.HR_INBOX_EMAIL)
+    const hrEmail = 'hr@exxircapital.com'
     const hmEmail = job.hiring_manager?.email
     const hmName = job.hiring_manager?.full_name ?? 'Hiring Manager'
 

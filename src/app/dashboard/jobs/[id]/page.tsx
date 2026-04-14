@@ -48,20 +48,6 @@ export default async function JobDetailPage({
     .eq('job_id', id)
     .order('submitted_at', { ascending: false })
 
-  const stats = {
-    total: applications?.length ?? 0,
-    screened: applications?.filter((a) => a.ai_screening).length ?? 0,
-    shortlisted: applications?.filter((a) => a.status === 'shortlisted' || a.status === 'interview').length ?? 0,
-    avgScore:
-      applications && applications.length > 0
-        ? Math.round(
-            applications
-              .filter((a) => a.ai_screening?.score != null)
-              .reduce((sum, a) => sum + (a.ai_screening?.score ?? 0), 0) /
-              Math.max(1, applications.filter((a) => a.ai_screening).length)
-          )
-        : null,
-  }
 
   return (
     <div>
@@ -122,27 +108,7 @@ export default async function JobDetailPage({
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: 'Total Applications', value: stats.total, color: 'text-gray-900', bg: 'bg-white' },
-          { label: 'AI Screened', value: stats.screened, color: 'text-brand-600', bg: 'bg-white' },
-          { label: 'Shortlisted', value: stats.shortlisted, color: 'text-emerald-600', bg: 'bg-white' },
-          {
-            label: 'Avg AI Score',
-            value: stats.avgScore != null ? `${stats.avgScore}/100` : '—',
-            color: stats.avgScore != null ? (stats.avgScore >= 70 ? 'text-emerald-600' : stats.avgScore >= 50 ? 'text-amber-600' : 'text-red-600') : 'text-gray-300',
-            bg: 'bg-white',
-          },
-        ].map((stat) => (
-          <div key={stat.label} className={`${stat.bg} rounded-xl border border-stone-200 p-5 shadow-sm`}>
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-2">{stat.label}</p>
-            <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Applications — list + pipeline toggle */}
+      {/* Applications */}
       <CandidatesPipelineView
         applications={(applications ?? []).map((app) => ({
           id: app.id,

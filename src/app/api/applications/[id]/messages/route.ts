@@ -3,7 +3,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendGraphEmail } from '@/lib/email/graphEmail'
+import { sendGraphEmail, cleanEnv } from '@/lib/email/graphEmail'
 
 export async function GET(
   _request: Request,
@@ -112,5 +112,6 @@ async function sendNotification(params: {
     toName: recipient.full_name,
     subject: `New message about ${applicantName} – ${job.title}`,
     body: `${profile.full_name} left a note on ${applicantName}'s application for ${job.title}:\n\n"${text}"\n\nView in dashboard: ${process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'}/dashboard`,
+    from: cleanEnv(process.env.GRAPH_INTERNAL_SENDER_EMAIL) ?? cleanEnv(process.env.GRAPH_SENDER_EMAIL),
   })
 }

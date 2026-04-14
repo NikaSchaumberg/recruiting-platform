@@ -29,6 +29,14 @@ function inboxResource(): string {
   return `users/${mailbox}/mailFolders/inbox/messages`
 }
 
+export async function deleteSubscription(subscriptionId: string): Promise<void> {
+  const token = await getGraphToken()
+  await fetch(
+    `https://graph.microsoft.com/v1.0/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+  )
+}
+
 export async function listSubscriptions(): Promise<GraphSubscription[]> {
   const token = await getGraphToken()
   const res = await fetch('https://graph.microsoft.com/v1.0/subscriptions', {
@@ -113,20 +121,31 @@ export async function ensureSubscription(): Promise<{
   const ours = subscriptions.find((s) => s.notificationUrl === url)
 
   if (ours) {
-    const expiresAt = new Date(ours.expirationDateTime).getTime()
-    const timeLeft = expiresAt - Date.now()
+    const expectedResource = inboxResource()
 
-    if (timeLeft > RENEW_THRESHOLD_MS) {
+    // If the subscription exists but watches a different mailbox (e.g. GRAPH_SENDER_EMAIL
+    // was changed from nschaumberg@ to hr@), delete it and fall through to create a fresh one.
+    if (ours.resource !== expectedResource) {
       console.log(
-        `[graphSubscription] Active — expires ${ours.expirationDateTime} (${Math.round(timeLeft / 3600000)}h left)`
+        `[graphSubscription] Resource mismatch — found "${ours.resource}", expected "${expectedResource}". Deleting stale subscription.`
       )
-      return { action: 'ok', subscription: ours }
-    }
+      await deleteSubscription(ours.id)
+    } else {
+      const expiresAt = new Date(ours.expirationDateTime).getTime()
+      const timeLeft = expiresAt - Date.now()
 
-    console.log(`[graphSubscription] Renewing — only ${Math.round(timeLeft / 3600000)}h left`)
-    const renewed = await renewSubscription(ours.id)
-    console.log(`[graphSubscription] Renewed until ${renewed.expirationDateTime}`)
-    return { action: 'renewed', subscription: renewed }
+      if (timeLeft > RENEW_THRESHOLD_MS) {
+        console.log(
+          `[graphSubscription] Active — expires ${ours.expirationDateTime} (${Math.round(timeLeft / 3600000)}h left)`
+        )
+        return { action: 'ok', subscription: ours }
+      }
+
+      console.log(`[graphSubscription] Renewing — only ${Math.round(timeLeft / 3600000)}h left`)
+      const renewed = await renewSubscription(ours.id)
+      console.log(`[graphSubscription] Renewed until ${renewed.expirationDateTime}`)
+      return { action: 'renewed', subscription: renewed }
+    }
   }
 
   console.log('[graphSubscription] No subscription found — creating')

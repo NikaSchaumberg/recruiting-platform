@@ -1,54 +1,4 @@
-import { cleanEnv } from '@/lib/email/graphEmail'
-
-interface TokenCache {
-  token: string
-  expiresAt: number
-}
-
-let tokenCache: TokenCache | null = null
-
-async function getGraphToken(): Promise<string> {
-  const now = Date.now()
-  if (tokenCache && tokenCache.expiresAt > now + 60_000) {
-    return tokenCache.token
-  }
-
-  const tenantId = process.env.AZURE_TENANT_ID
-  const clientId = process.env.AZURE_CLIENT_ID
-  const clientSecret = process.env.AZURE_CLIENT_SECRET
-
-  if (!tenantId || !clientId || !clientSecret) {
-    throw new Error('Microsoft Graph credentials not configured')
-  }
-
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope: 'https://graph.microsoft.com/.default',
-  })
-
-  const res = await fetch(
-    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    }
-  )
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Graph token request failed: ${res.status} ${text}`)
-  }
-
-  const data = await res.json()
-  tokenCache = {
-    token: data.access_token,
-    expiresAt: now + data.expires_in * 1000,
-  }
-  return tokenCache.token
-}
+import { cleanEnv, getGraphToken } from '@/lib/email/graphEmail'
 
 interface OutlookNotificationParams {
   recipientEmail: string
@@ -82,9 +32,14 @@ function getScoreBadgeColor(score: number): string {
 }
 
 export async function sendOutlookNotification(params: OutlookNotificationParams): Promise<void> {
-  const senderEmail = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
+  // Internal notifications (screening results → HR + hiring managers) are sent
+  // from nschaumberg@exxircapital.com. Fall back to GRAPH_SENDER_EMAIL if the
+  // internal sender isn't configured.
+  const senderEmail =
+    cleanEnv(process.env.GRAPH_INTERNAL_SENDER_EMAIL) ??
+    cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!senderEmail) {
-    console.warn('[Outlook] GRAPH_SENDER_EMAIL not set — skipping notification')
+    console.warn('[Outlook] GRAPH_INTERNAL_SENDER_EMAIL / GRAPH_SENDER_EMAIL not set — skipping notification')
     return
   }
 

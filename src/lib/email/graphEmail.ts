@@ -62,8 +62,10 @@ export async function sendGraphEmail(params: {
   toName: string
   subject: string
   body: string
+  /** Optional sender override. Defaults to GRAPH_SENDER_EMAIL (hr@). */
+  from?: string
 }): Promise<void> {
-  const senderEmail = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
+  const senderEmail = params.from ?? cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!senderEmail) {
     console.error('[Graph] GRAPH_SENDER_EMAIL is not set in .env.local')
     throw new Error('GRAPH_SENDER_EMAIL not configured')
@@ -125,8 +127,10 @@ export async function sendGraphEmailWithAttachment(params: {
     contentType: string
     base64: string
   }
+  /** Optional sender override. Defaults to GRAPH_SENDER_EMAIL (hr@). */
+  from?: string
 }): Promise<void> {
-  const senderEmail = cleanEnv(process.env.GRAPH_SENDER_EMAIL)
+  const senderEmail = params.from ?? cleanEnv(process.env.GRAPH_SENDER_EMAIL)
   if (!senderEmail) throw new Error('GRAPH_SENDER_EMAIL not configured')
 
   console.log(`[Graph] Sending email with attachment — from: ${senderEmail}, to: ${params.to}, subject: "${params.subject}"`)

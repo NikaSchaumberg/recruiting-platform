@@ -14,7 +14,10 @@
       "Bash(git -C /Users/nikaschaumberg/recruiting-platform status --porcelain)",
       "Bash(printf 'hr@exxircapital.com')",
       "Bash(npx supabase:*)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(npm show:*)",
+      "Bash(npx @next/codemod@latest --help)",
+      "Bash(sudo npm:*)"
     ]
   }
 }

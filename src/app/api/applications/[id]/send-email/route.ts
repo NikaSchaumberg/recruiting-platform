@@ -91,6 +91,7 @@ export async function POST(
       sent_by: user.id,
       sent_by_name: profile.full_name,
       status: 'sent',
+      direction: 'outbound',
     })
     .select('id')
     .single()
