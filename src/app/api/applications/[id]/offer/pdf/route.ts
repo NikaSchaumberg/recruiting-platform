@@ -19,7 +19,7 @@ export async function POST(
 
   try {
     const pdfBytes = await generateOfferPdf(offer)
-    return new Response(pdfBytes, {
+    return new Response(Buffer.from(pdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="offer-letter-${offer.candidate_name.replace(/\s+/g, '-').toLowerCase()}.pdf"`,
@@ -246,7 +246,6 @@ function drawSectionHeader(
   page.drawText(title.toUpperCase(), {
     x: margin + 10, y: y + 1,
     size: 8, font, color: rgb(0.3, 0.3, 0.3),
-    characterSpacing: 1,
   })
   return y - 28
 }

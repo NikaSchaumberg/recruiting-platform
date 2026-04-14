@@ -19,7 +19,7 @@ export async function POST(
 
   try {
     const pdfBytes = await generateContractPdf(contract)
-    return new Response(pdfBytes, {
+    return new Response(Buffer.from(pdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="contract-${contract.candidate_name.replace(/\s+/g, '-').toLowerCase()}.pdf"`,
@@ -219,7 +219,7 @@ export async function generateContractPdf(contract: ContractData): Promise<Uint8
     page.drawRectangle({ x: margin, y: y - 4, width: 3, height: 18, color: caramel })
     page.drawText(section.title.toUpperCase(), {
       x: margin + 10, y: y + 1,
-      size: 8, font: helveticaBold, color: rgb(0.3, 0.3, 0.3), characterSpacing: 0.8,
+      size: 8, font: helveticaBold, color: rgb(0.3, 0.3, 0.3),
     })
     y -= 24
 
@@ -246,7 +246,7 @@ export async function generateContractPdf(contract: ContractData): Promise<Uint8
     page.drawRectangle({ x: margin, y: y - 4, width: 3, height: 18, color: caramel })
     page.drawText('ADDITIONAL TERMS', {
       x: margin + 10, y: y + 1,
-      size: 8, font: helveticaBold, color: rgb(0.3, 0.3, 0.3), characterSpacing: 0.8,
+      size: 8, font: helveticaBold, color: rgb(0.3, 0.3, 0.3),
     })
     y -= 24
     const termLines = wrapText(contract.additional_terms, timesRoman, 10, contentW)
