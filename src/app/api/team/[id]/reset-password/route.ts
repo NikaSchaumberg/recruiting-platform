@@ -27,7 +27,6 @@ export async function POST(
   const targetName = targetUser.user.user_metadata?.full_name ?? targetEmail
 
   // Generate a recovery token via admin client (uses service role — no email sending by Supabase)
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
   const { data: linkData, error: linkErr } = await adminClient.auth.admin.generateLink({
     type: 'recovery',
     email: targetEmail,
@@ -40,10 +39,17 @@ export async function POST(
 
   const token = linkData.properties.hashed_token
 
-  // Point directly to update-password — no redirect chain, token verified there.
-  // Note: & encoded as &amp; in href to satisfy HTML spec (required by strict email clients).
-  const resetLink = `${siteUrl}/auth/update-password?token_hash=${token}&type=recovery`
-  const resetLinkHtmlSafe = `${siteUrl}/auth/update-password?token_hash=${token}&amp;type=recovery`
+  // Ensure we always have a valid absolute URL.
+  // NEXT_PUBLIC_SITE_URL may be unset in some Vercel environments — fall back to hardcoded prod URL.
+  const rawSiteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
+  const baseUrl = rawSiteUrl.startsWith('http') ? rawSiteUrl : 'https://recruiting-platform-six.vercel.app'
+
+  const resetLink = `${baseUrl}/auth/update-password?token_hash=${token}&type=recovery`
+  const resetLinkHtmlSafe = `${baseUrl}/auth/update-password?token_hash=${token}&amp;type=recovery`
+
+  console.log('[reset-password] siteUrl env:', process.env.NEXT_PUBLIC_SITE_URL)
+  console.log('[reset-password] baseUrl resolved:', baseUrl)
+  console.log('[reset-password] resetLink:', resetLink)
 
   const emailBody = `<!DOCTYPE html>
 <html>
