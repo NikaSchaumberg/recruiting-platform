@@ -52,6 +52,7 @@ export async function POST(
         sent_by: user.id,
         sent_by_name: profile.full_name,
         status: 'scheduled',
+        direction: 'outbound',
         send_at: scheduledAt,
       })
       .select('id')

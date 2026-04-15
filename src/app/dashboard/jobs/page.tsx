@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Badge } from '@/components/ui/Badge'
@@ -6,6 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { JobActions } from '@/components/dashboard/JobActions'
 import { ClickableRow } from '@/components/dashboard/ClickableRow'
 import { formatDate, formatEmploymentType } from '@/lib/utils/formatting'
+import { UnreadRepliesWidget } from '@/components/dashboard/UnreadRepliesWidget'
+import { InterviewCalendar } from '@/components/dashboard/InterviewCalendar'
 
 export default async function JobsPage() {
   const supabase = await createClient()
@@ -34,6 +37,42 @@ export default async function JobsPage() {
 
   const { data: jobs } = await query
 
+  // Fetch upcoming interviews for the calendar
+  const admin = createAdminClient()
+  const now = new Date().toISOString()
+
+  let interviewQuery = admin
+    .from('interviews')
+    .select(`
+      id, application_id, scheduled_at, duration_minutes, interview_type, location,
+      applications!inner ( applicant_name, jobs!inner ( title, hiring_manager_id ) )
+    `)
+    .eq('status', 'scheduled')
+    .gte('scheduled_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()) // last 30 days + future
+    .order('scheduled_at', { ascending: true })
+
+  if (profile.role === 'hiring_manager') {
+    interviewQuery = interviewQuery.contains('interviewer_emails', [profile.email]) as typeof interviewQuery
+  }
+
+  const { data: rawInterviews } = await interviewQuery
+
+  const calendarInterviews = (rawInterviews ?? []).map((iv) => {
+    const app = iv.applications as unknown as { applicant_name: string; jobs: { title: string } }
+    return {
+      id: iv.id,
+      application_id: iv.application_id,
+      scheduled_at: iv.scheduled_at,
+      duration_minutes: iv.duration_minutes,
+      interview_type: iv.interview_type,
+      location: iv.location,
+      applicant_name: app.applicant_name,
+      job_title: app.jobs.title,
+    }
+  })
+
+  void now // suppress unused var warning
+
   const statusColor = (status: string) => {
     if (status === 'open') return 'text-emerald-700 bg-emerald-50 border border-emerald-200'
     if (status === 'closed') return 'text-red-600 bg-red-50 border border-red-200'
@@ -42,6 +81,10 @@ export default async function JobsPage() {
 
   return (
     <div>
+      {/* Dashboard widgets */}
+      <UnreadRepliesWidget userId={user.id} role={profile.role} />
+      <InterviewCalendar interviews={calendarInterviews} />
+
       {/* Page header */}
       <div className="flex items-center justify-between mb-8">
         <div>

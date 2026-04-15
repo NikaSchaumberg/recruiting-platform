@@ -267,7 +267,7 @@ export function OfferForm({ applicationId, initialOffer, candidateEmail }: Offer
                   OFFER OF EMPLOYMENT
                 </p>
               </div>
-              <p className="text-xs text-gray-400" style={{ fontFamily: 'sans-serif' }}>
+              <p suppressHydrationWarning className="text-xs text-gray-400" style={{ fontFamily: 'sans-serif' }}>
                 {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
               </p>
             </div>

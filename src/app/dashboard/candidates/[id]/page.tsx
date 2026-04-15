@@ -8,6 +8,7 @@ import { StatusUpdater } from '@/components/dashboard/StatusUpdater'
 import { EmailThreadPanel } from '@/components/dashboard/EmailThreadPanel'
 import { DeleteCandidateButton } from '@/components/dashboard/DeleteCandidateButton'
 import { CommunicationLog } from '@/components/dashboard/CommunicationLog'
+import { ScheduleInterviewWizard } from '@/components/dashboard/ScheduleInterviewWizard'
 import {
   formatDate,
   getScoreColor,
@@ -105,8 +106,8 @@ export default async function CandidateDetailPage({
   const contractSent = contract?.status === 'sent' || contract?.status === 'signed'
   const canManageOffer = profile.role === 'admin' || profile.role === 'hiring_manager'
 
-  // Fetch email history and messages
-  const [{ data: rawEmails }, { data: rawMessages }] = await Promise.all([
+  // Fetch email history, messages, interviews, and team members
+  const [{ data: rawEmails }, { data: rawMessages }, { data: rawInterviews }, { data: rawTeam }] = await Promise.all([
     adminClient
       .from('candidate_emails')
       .select('*')
@@ -117,10 +118,37 @@ export default async function CandidateDetailPage({
       .select('*')
       .eq('application_id', id)
       .order('sent_at', { ascending: true }),
+    adminClient
+      .from('interviews')
+      .select('*')
+      .eq('application_id', id)
+      .order('scheduled_at', { ascending: true }),
+    adminClient
+      .from('profiles')
+      .select('id, full_name, email, role')
+      .in('role', ['admin', 'hiring_manager'])
+      .order('full_name', { ascending: true }),
   ])
+
+  // Mark all unread inbound emails for this application as read
+  adminClient
+    .from('candidate_emails')
+    .update({ read: true })
+    .eq('application_id', id)
+    .eq('direction', 'inbound')
+    .eq('read', false)
+    .then(() => {})
 
   const emails = (rawEmails ?? []) as CandidateEmail[]
   const messages = (rawMessages ?? []) as CandidateMessage[]
+  const interviews = (rawInterviews ?? []) as {
+    id: string; scheduled_at: string; duration_minutes: number
+    interview_type: string; location: string | null; notes: string | null; status: string
+    interviewer_emails: string[]; graph_event_id: string | null
+  }[]
+  const teamMembers = (rawTeam ?? []) as {
+    id: string; full_name: string; email: string; role: string
+  }[]
 
   const screening = application.ai_screening as {
     score: number
@@ -200,14 +228,24 @@ export default async function CandidateDetailPage({
                   )}
                 </div>
               </div>
-              <StatusUpdater
-                applicationId={id}
-                currentStatus={application.status}
-                candidateName={application.applicant_name}
-                candidateEmail={application.applicant_email}
-                jobTitle={application.job?.title ?? ''}
-                hrName={profile.full_name}
-              />
+              <div className="flex flex-col items-end gap-2">
+                <StatusUpdater
+                  applicationId={id}
+                  currentStatus={application.status}
+                  candidateName={application.applicant_name}
+                  candidateEmail={application.applicant_email}
+                  jobTitle={application.job?.title ?? ''}
+                  hrName={profile.full_name}
+                />
+                <ScheduleInterviewWizard
+                  applicationId={id}
+                  candidateName={application.applicant_name}
+                  candidateEmail={application.applicant_email}
+                  jobTitle={application.job?.title ?? ''}
+                  existingInterviews={interviews}
+                  teamMembers={teamMembers}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-stone-100">
               <div>

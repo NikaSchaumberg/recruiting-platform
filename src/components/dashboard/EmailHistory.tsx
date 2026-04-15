@@ -174,8 +174,10 @@ export function EmailHistory({ emails, onReply }: EmailHistoryProps) {
                     )}
                   </div>
 
-                  {/* Timestamp */}
+                  {/* Timestamp — suppressHydrationWarning because toLocaleString
+                      differs between server (UTC) and client (local timezone) */}
                   <p
+                    suppressHydrationWarning
                     className="text-xs text-stone-400 mt-1 px-1"
                     style={{ textAlign: isInbound ? 'left' : 'right' }}
                   >

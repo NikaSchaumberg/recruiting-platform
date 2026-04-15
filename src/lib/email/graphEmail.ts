@@ -62,6 +62,8 @@ export async function sendGraphEmail(params: {
   toName: string
   subject: string
   body: string
+  /** Send body as HTML instead of plain text. Defaults to false. */
+  html?: boolean
   /** Optional sender override. Defaults to GRAPH_SENDER_EMAIL (hr@). */
   from?: string
 }): Promise<void> {
@@ -78,7 +80,7 @@ export async function sendGraphEmail(params: {
   const payload = {
     message: {
       subject: params.subject,
-      body: { contentType: 'Text', content: params.body },
+      body: { contentType: params.html ? 'HTML' : 'Text', content: params.body },
       toRecipients: [
         { emailAddress: { address: params.to, name: params.toName } },
       ],

@@ -20,13 +20,27 @@ export async function PATCH(
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await request.json()
-  const { full_name, email, teams_webhook_url } = body
+  const { full_name, email, teams_webhook_url, role, password } = body
 
   const adminClient = createAdminClient()
 
-  // Update auth user email if changed
-  if (email) {
-    const { error: authError } = await adminClient.auth.admin.updateUserById(id, { email })
+  // Validate role if provided
+  if (role !== undefined && !['admin', 'hiring_manager'].includes(role)) {
+    return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+  }
+
+  if (password !== undefined && password.length < 8) {
+    return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
+  }
+
+  // Update auth user (email, password, and/or role metadata)
+  const authUpdates: Record<string, unknown> = {}
+  if (email) authUpdates.email = email
+  if (password) authUpdates.password = password
+  if (role) authUpdates.user_metadata = { role }
+
+  if (Object.keys(authUpdates).length > 0) {
+    const { error: authError } = await adminClient.auth.admin.updateUserById(id, authUpdates)
     if (authError) return NextResponse.json({ error: authError.message }, { status: 500 })
   }
 
@@ -34,6 +48,7 @@ export async function PATCH(
   const updates: Record<string, string> = {}
   if (full_name) updates.full_name = full_name
   if (email) updates.email = email
+  if (role) updates.role = role
   if (teams_webhook_url !== undefined) updates.teams_webhook_url = teams_webhook_url
 
   const { data: profile, error } = await adminClient

@@ -73,6 +73,7 @@ export async function POST(
       sent_by: user.id,
       sent_by_name: offer.hr_name,
       status: 'sent',
+      direction: 'outbound',
     })
 
     return NextResponse.json({ success: true })

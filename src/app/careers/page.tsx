@@ -13,7 +13,7 @@ function SectionContainer({ children, paddingTop = '64px', paddingBottom = '64px
   paddingBottom?: string
 }) {
   return (
-    <div style={{ paddingLeft: '180px', paddingRight: '180px', paddingTop, paddingBottom }}>
+    <div style={{ paddingLeft: '260px', paddingRight: '260px', paddingTop, paddingBottom }}>
       {children}
     </div>
   )

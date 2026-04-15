@@ -68,11 +68,12 @@ export async function POST(
   // Log to candidate_emails
   await admin.from('candidate_emails').insert({
     application_id: id,
-    to_email: application.applicant_email,
     subject: `Employment Contract — ${contract.job_title}`,
-    template_key: 'contract',
+    body: `[Contract PDF sent as attachment to ${application.applicant_email}]`,
     sent_by: user.id,
-    sent_at: new Date().toISOString(),
+    sent_by_name: profile.full_name,
+    status: 'sent',
+    direction: 'outbound',
   }).then(() => {})
 
   return NextResponse.json({ contract: saved ?? contract })

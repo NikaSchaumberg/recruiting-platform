@@ -129,7 +129,7 @@ export function CommunicationLog({
                   >
                     {msg.text}
                   </div>
-                  <p className="text-xs text-stone-400 mt-1 px-1">
+                  <p suppressHydrationWarning className="text-xs text-stone-400 mt-1 px-1">
                     {msg.sender_name} · {formatTime(msg.sent_at)}
                   </p>
                 </div>
